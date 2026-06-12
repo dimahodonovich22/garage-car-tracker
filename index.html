@@ -239,6 +239,32 @@ button{font-family:inherit}
 .sw-dot:hover{transform:scale(1.12)}
 .sw-dot.on{border-color:#fff}
 
+/* gallery */
+.icon-btn{background:var(--surface);border:1px solid var(--border);color:var(--muted);width:38px;height:38px;border-radius:11px;display:grid;place-items:center;cursor:pointer;transition:all .2s;flex-shrink:0}
+.icon-btn:hover{color:var(--accent);border-color:var(--accent)}
+.icon-btn svg{width:19px;height:19px}
+.gallery{display:grid;grid-template-columns:repeat(4,1fr);gap:9px}
+.gthumb{aspect-ratio:1;border-radius:14px;overflow:hidden;cursor:pointer;border:1px solid var(--border);
+  background:var(--surface) center/cover no-repeat;position:relative;transition:transform .2s,border-color .2s}
+.gthumb:hover{transform:scale(1.04);border-color:var(--border-strong)}
+.gthumb .cover-badge{position:absolute;left:6px;bottom:6px;display:flex;align-items:center;gap:3px;
+  font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.5px;color:#fff;
+  background:rgba(91,157,255,.85);padding:3px 6px;border-radius:7px;backdrop-filter:blur(4px)}
+.gthumb .cover-badge svg{width:9px;height:9px}
+.gadd{aspect-ratio:1;border-radius:14px;border:1.5px dashed var(--border-strong);background:var(--surface);
+  display:flex;flex-direction:column;align-items:center;justify-content:center;gap:5px;cursor:pointer;color:var(--muted);transition:all .2s}
+.gadd:hover{color:var(--accent);border-color:var(--accent);background:var(--accent-soft)}
+.gadd svg{width:23px;height:23px}
+.gadd span{font-size:10.5px;font-weight:700}
+.gempty{font-size:12.5px;color:var(--muted-2);text-align:center;padding:6px 0 2px;grid-column:1/-1}
+/* lightbox */
+.lb{align-items:center;justify-content:center}
+.lb .lb-box{display:flex;flex-direction:column;align-items:center;gap:16px;max-width:96vw;padding:14px}
+.lb img{max-width:94vw;max-height:74vh;border-radius:18px;object-fit:contain;box-shadow:0 30px 80px -20px rgba(0,0,0,.8);background:#000}
+.lb-ctrl{display:flex;align-items:center;gap:9px;flex-wrap:wrap;justify-content:center}
+.lb-count{font-size:13px;font-weight:700;color:var(--muted);font-family:'JetBrains Mono',monospace;min-width:46px;text-align:center}
+.lb-ctrl .tool-btn.on{color:var(--accent);border-color:var(--accent)}
+
 .tools{display:flex;gap:10px;justify-content:center;margin-top:30px;flex-wrap:wrap}
 .tool-btn{font-size:12.5px;font-weight:600;color:var(--muted);background:var(--surface);border:1px solid var(--border);
   padding:9px 16px;border-radius:11px;cursor:pointer;display:inline-flex;align-items:center;gap:7px;transition:all .2s}
@@ -357,6 +383,23 @@ button{font-family:inherit}
 </div>
 
 <input type="file" id="importFile" accept="application/json" hidden>
+<input type="file" id="galleryFile" accept="image/*" multiple hidden>
+<input type="file" id="cameraFile" accept="image/*" capture="environment" hidden>
+
+<!-- Lightbox -->
+<div class="overlay lb" id="lbOverlay" role="dialog" aria-modal="true">
+  <div class="lb-box">
+    <img id="lbImg" alt="Фото машины">
+    <div class="lb-ctrl">
+      <button class="icon-btn" id="lbPrev" aria-label="Предыдущее"></button>
+      <span class="lb-count" id="lbCount"></span>
+      <button class="icon-btn" id="lbNext" aria-label="Следующее"></button>
+      <button class="tool-btn" id="lbCover"></button>
+      <button class="tool-btn" id="lbDel" style="color:#ff8a8a">Удалить</button>
+      <button class="tool-btn" id="lbClose">Закрыть</button>
+    </div>
+  </div>
+</div>
 
 <script>
 "use strict";
@@ -381,7 +424,13 @@ const SVG = {
   trash:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/></svg>',
   inbox:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.45 5.11L2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/></svg>',
   download:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>',
-  upload:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>'
+  upload:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>',
+  camera:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>',
+  image:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg>',
+  star:'<svg viewBox="0 0 24 24" fill="currentColor" stroke="none"><path d="M12 2l2.9 6.3 6.9.6-5.2 4.6 1.6 6.7L12 17.3 5.8 20.8l1.6-6.7L2.2 8.9l6.9-.6z"/></svg>',
+  chevLeft:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>',
+  chevRight:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>',
+  close:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>'
 };
 const ACCENT='#5b9dff';
 // monochrome blue ramp — categories differ by lightness, not hue
@@ -460,7 +509,7 @@ function render(){
   else if(ui.tab==='stats') page.innerHTML=statsHTML();
   page.innerHTML += toolsHTML();
   wireChrome();
-  if(ui.tab==='overview') animateBars();
+  if(ui.tab==='overview'){ animateBars(); wireGallery(); }
   if(ui.tab==='history') wireRecords();
 }
 
@@ -483,6 +532,7 @@ function wireOnboarding(){ document.getElementById('onbAdd').onclick=()=>openCar
 
 /* ---- topbar ---- */
 function carAvatar(c,size){
+  if(c.photo) return `<div class="car-av" style="width:${size}px;height:${size}px;background-image:url('${c.photo}')"></div>`;
   const initials = (c.make[0]||'')+(c.model[0]||'');
   return `<div class="car-av" style="width:${size}px;height:${size}px;background:linear-gradient(135deg,${c.color},${shade(c.color,-30)})">${esc(initials.toUpperCase())}</div>`;
 }
@@ -546,6 +596,17 @@ function overviewHTML(){
     <div class="track"><div class="fill" style="background:${T.color}" data-w="${w}"></div></div>
     <div class="amt">${fmtN(sums[t])} ${cur()}</div></div>`;}).join('');
 
+  // photo gallery
+  const photos=c.photos||[];
+  const thumbs=photos.map((p,i)=>`<div class="gthumb" data-i="${i}" style="background-image:url('${p}')">${p===c.photo?`<span class="cover-badge">${SVG.star}обложка</span>`:''}</div>`).join('');
+  const addTile=`<div class="gadd" id="galAddTile">${SVG.plus}<span>Добавить</span></div>`;
+  const galleryBody = photos.length? thumbs+addTile : `${addTile}<div class="gempty">Добавь фото машины с камеры или из галереи</div>`;
+  const galleryPanel=`<div class="panel"><div class="panel-head"><h3>Галерея</h3>
+    <div style="display:flex;gap:8px">
+      <button class="icon-btn" id="galCam" title="Снять на камеру">${SVG.camera}</button>
+      <button class="icon-btn" id="galPick" title="Выбрать из галереи">${SVG.image}</button>
+    </div></div><div class="gallery">${galleryBody}</div></div>`;
+
   // recent events
   const recent=recs.slice().sort(sortRecs).slice(0,4).map(cardHTML).join('') ||
     `<div class="empty">${SVG.inbox}<p>Пока нет записей. Жми + внизу, чтобы добавить заправку, ТО или расход.</p></div>`;
@@ -553,6 +614,7 @@ function overviewHTML(){
   return `<div class="sec-title">Обзор машины</div>
     <div class="stats">${statsHtml}</div>
     <div class="panel"><div class="panel-head"><h3>Расходы по категориям</h3><span class="tot">${fmtN(total)} ${cur()} всего</span></div><div class="bars">${bars}</div></div>
+    ${galleryPanel}
     <div class="sec-title">Последние события</div>
     <div class="records">${recent}</div>`;
 }
@@ -845,7 +907,74 @@ function closeSwitch(){switchOv.classList.remove('open');document.body.style.ove
 document.getElementById('addCarBtn2').onclick=()=>openCarSheet(null);
 switchOv.onclick=e=>{if(e.target.id==='switchOverlay')closeSwitch();};
 
-document.addEventListener('keydown',e=>{if(e.key==='Escape'){closeRec();closeCar();closeSwitch();}});
+document.addEventListener('keydown',e=>{if(e.key==='Escape'){closeRec();closeCar();closeSwitch();closeLightbox();}
+  if(lbOv.classList.contains('open')){if(e.key==='ArrowLeft')document.getElementById('lbPrev').click();if(e.key==='ArrowRight')document.getElementById('lbNext').click();}});
+
+/* ---- photo gallery ---- */
+function resizeImage(file,max,q){max=max||1280;q=q||0.82;
+  return new Promise((res,rej)=>{const img=new Image();const url=URL.createObjectURL(file);
+    img.onload=()=>{let w=img.naturalWidth,h=img.naturalHeight;
+      if(w>h&&w>max){h=Math.round(h*max/w);w=max;} else if(h>=w&&h>max){w=Math.round(w*max/h);h=max;}
+      const cv=document.createElement('canvas');cv.width=w;cv.height=h;
+      cv.getContext('2d').drawImage(img,0,0,w,h);URL.revokeObjectURL(url);
+      res(cv.toDataURL('image/jpeg',q));};
+    img.onerror=()=>{URL.revokeObjectURL(url);rej();};img.src=url;});
+}
+async function addPhotos(files){
+  const c=activeCar(); if(!c.photos)c.photos=[];
+  let added=0;
+  for(const f of files){ if(!f.type||!f.type.startsWith('image/'))continue;
+    try{ const url=await resizeImage(f); c.photos.push(url); if(!c.photo)c.photo=url; added++; }catch(e){} }
+  if(!added)return;
+  try{ save(); }
+  catch(e){ for(let i=0;i<added;i++)c.photos.pop(); if(c.photos.length===0)c.photo='';
+    alert('Не хватает места в браузере для новых фото. Удали несколько старых фотографий и попробуй снова.'); return; }
+  render();
+}
+function wireGallery(){
+  const cam=document.getElementById('galCam'),pick=document.getElementById('galPick'),add=document.getElementById('galAddTile');
+  const gf=document.getElementById('galleryFile'),cf=document.getElementById('cameraFile');
+  if(cam)cam.onclick=()=>cf.click();
+  if(pick)pick.onclick=()=>gf.click();
+  if(add)add.onclick=()=>gf.click();
+  document.querySelectorAll('.gthumb').forEach(t=>t.onclick=()=>openLightbox(parseInt(t.dataset.i)));
+}
+document.getElementById('galleryFile').onchange=e=>{const fs=[...e.target.files];e.target.value='';if(fs.length)addPhotos(fs);};
+document.getElementById('cameraFile').onchange=e=>{const fs=[...e.target.files];e.target.value='';if(fs.length)addPhotos(fs);};
+
+/* ---- lightbox ---- */
+const lbOv=document.getElementById('lbOverlay');
+document.getElementById('lbPrev').innerHTML=SVG.chevLeft;
+document.getElementById('lbNext').innerHTML=SVG.chevRight;
+function openLightbox(i){ui.lbIndex=i;renderLightbox();lbOv.classList.add('open');document.body.style.overflow='hidden';}
+function closeLightbox(){lbOv.classList.remove('open');document.body.style.overflow='';}
+function renderLightbox(){
+  const c=activeCar();const ph=c.photos||[];
+  if(!ph.length){closeLightbox();return;}
+  if(ui.lbIndex>=ph.length)ui.lbIndex=ph.length-1; if(ui.lbIndex<0)ui.lbIndex=0;
+  const url=ph[ui.lbIndex];
+  document.getElementById('lbImg').src=url;
+  document.getElementById('lbCount').textContent=`${ui.lbIndex+1} / ${ph.length}`;
+  const isCover=url===c.photo;
+  const coverBtn=document.getElementById('lbCover');
+  coverBtn.textContent=isCover?'✓ Обложка':'Сделать обложкой';
+  coverBtn.classList.toggle('on',isCover);
+  const multi=ph.length>1;
+  document.getElementById('lbPrev').style.visibility=multi?'visible':'hidden';
+  document.getElementById('lbNext').style.visibility=multi?'visible':'hidden';
+}
+document.getElementById('lbPrev').onclick=()=>{const ph=activeCar().photos||[];ui.lbIndex=(ui.lbIndex-1+ph.length)%ph.length;renderLightbox();};
+document.getElementById('lbNext').onclick=()=>{const ph=activeCar().photos||[];ui.lbIndex=(ui.lbIndex+1)%ph.length;renderLightbox();};
+document.getElementById('lbCover').onclick=()=>{const c=activeCar();c.photo=(c.photos||[])[ui.lbIndex];save();renderLightbox();render();};
+document.getElementById('lbDel').onclick=()=>{const c=activeCar();const ph=c.photos||[];const url=ph[ui.lbIndex];
+  if(!confirm('Удалить это фото?'))return;
+  c.photos=ph.filter((_,i)=>i!==ui.lbIndex);
+  if(c.photo===url)c.photo=c.photos[0]||'';
+  save();
+  if(!c.photos.length)closeLightbox(); else renderLightbox();
+  render();};
+document.getElementById('lbClose').onclick=closeLightbox;
+lbOv.onclick=e=>{if(e.target.id==='lbOverlay')closeLightbox();};
 
 /* ---- export/import ---- */
 function doExport(){
