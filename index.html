@@ -200,11 +200,16 @@ button{font-family:inherit}
 .type-opt span{font-size:10.5px;font-weight:700;color:var(--text);display:block}
 .field{margin-bottom:15px}
 .field label{display:block;font-size:12px;font-weight:700;color:var(--muted);margin-bottom:7px}
-.field input,.field select,.field textarea{width:100%;padding:13px 15px;border-radius:13px;border:1px solid var(--border);
+.field input,.field select,.field textarea{width:100%;min-width:0;padding:13px 15px;border-radius:13px;border:1px solid var(--border);
   background:var(--surface);color:var(--text);font-size:15px;font-family:inherit;transition:border-color .2s,background .2s}
 .field input:focus,.field select:focus,.field textarea:focus{outline:none;border-color:var(--blue-light);background:var(--surface-2)}
 .field textarea{resize:vertical;min-height:60px}
+.field input[type=date]{-webkit-appearance:none;appearance:none;text-align:left;line-height:1.3}
+.field input[type=date]::-webkit-date-and-time-value{text-align:left}
+.field input[type=date]::-webkit-calendar-picker-indicator{filter:invert(.7);cursor:pointer;margin-left:auto}
 .field-row{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.field-row>.field{min-width:0;margin-bottom:0}
+.field-row{margin-bottom:15px}
 .field-row-3{display:grid;grid-template-columns:1fr 1fr;gap:12px}
 .hint{font-size:11.5px;color:var(--muted-2);margin-top:6px;line-height:1.4}
 .calc-box{background:rgba(34,201,201,.08);border:1px solid rgba(34,201,201,.2);border-radius:13px;padding:12px 15px;margin-bottom:16px;font-size:13px;color:var(--teal);font-weight:600;display:none}
