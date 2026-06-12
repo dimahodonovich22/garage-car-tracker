@@ -1,0 +1,9 @@
+# local preview/dev tooling
+.claude/
+
+# OS junk
+.DS_Store
+Thumbs.db
+
+# backups exported from the app
+garage-*.json
