@@ -274,6 +274,19 @@ button{font-family:inherit}
 .lb-count{font-size:13px;font-weight:700;color:var(--muted);font-family:'JetBrains Mono',monospace;min-width:46px;text-align:center}
 .lb-ctrl .tool-btn.on{color:var(--accent);border-color:var(--accent)}
 
+/* ownership */
+#toast{position:fixed;left:50%;bottom:96px;transform:translateX(-50%) translateY(12px);z-index:80;
+  background:rgba(22,25,31,.96);border:1px solid var(--border-strong);color:var(--text);
+  font-size:13px;font-weight:600;padding:12px 18px;border-radius:13px;box-shadow:var(--shadow);
+  opacity:0;pointer-events:none;transition:opacity .25s,transform .25s;max-width:90vw;text-align:center}
+#toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+.ro-pill{display:inline-flex;align-items:center;gap:7px;font-size:12px;font-weight:700;color:#9cc4ff;
+  background:rgba(91,157,255,.13);border:1px solid rgba(91,157,255,.28);padding:6px 12px;border-radius:10px;margin:0 4px 14px}
+.own-badge{font-size:10.5px;font-weight:700;color:#9cc4ff;background:rgba(91,157,255,.15);padding:3px 8px;border-radius:7px;white-space:nowrap}
+.own-note{font-size:13px;font-weight:700;padding:12px 14px;border-radius:13px;margin-bottom:14px}
+.own-note.ro{color:#9cc4ff;background:rgba(91,157,255,.1);border:1px solid rgba(91,157,255,.25)}
+.own-note.mine{color:var(--muted);background:var(--surface);border:1px solid var(--border)}
+.field input:disabled,.field select:disabled{opacity:.55;cursor:not-allowed}
 /* sync */
 .sync-or{text-align:center;color:var(--muted-2);font-size:12px;font-weight:700;margin:16px 0;text-transform:uppercase;letter-spacing:1px}
 .code-box{display:flex;align-items:center;gap:10px;background:var(--surface);border:1px solid var(--border);border-radius:13px;padding:12px 14px;margin-top:8px}
@@ -381,11 +394,12 @@ button{font-family:inherit}
           <input id="cColorText" type="text" value="#1C69D4" maxlength="7" spellcheck="false" placeholder="#1C69D4">
           <div class="swatches" id="swatches"></div>
         </div></div>
+      <div id="ownRow"></div>
       <div class="actions">
         <button type="button" class="btn btn-danger" id="carDelete" style="display:none" aria-label="Удалить авто">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg></button>
         <button type="button" class="btn btn-ghost" id="carCancel">Отмена</button>
-        <button type="submit" class="btn btn-primary">Сохранить</button>
+        <button type="submit" class="btn btn-primary" id="carSave">Сохранить</button>
       </div>
     </form>
   </div>
@@ -502,6 +516,20 @@ function persistLocal(ts){ localStorage.setItem(KEY, JSON.stringify(state)); loc
 function save(){ persistLocal(new Date().toISOString()); schedulePush(); }
 function uid(){ return 'x'+Math.abs(Date.now()^(performance.now()*1000|0)).toString(36); }
 state=load();
+
+/* ============ DEVICE IDENTITY & OWNERSHIP ============ */
+const deviceId=()=>{ let d=localStorage.getItem('garage_device_id'); if(!d){ d=genCode(); localStorage.setItem('garage_device_id',d);} return d; };
+const deviceName=()=>localStorage.getItem('garage_device_name')||'';
+const setDeviceName=n=>{ n=(n||'').trim(); n?localStorage.setItem('garage_device_name',n):localStorage.removeItem('garage_device_name'); };
+const isMine=c=>{ c=c||activeCar(); return !!c && (!c.owner || c.owner===deviceId()); };          // unowned = editable by everyone
+const ownedByOther=c=>{ c=c||activeCar(); return !!c && !!c.owner && c.owner!==deviceId(); };
+function guardEdit(){ if(ownedByOther()){ toast('🔒 Это машина другого пользователя — только просмотр'); return false; } return true; }
+function claimCar(id){ const c=state.cars.find(x=>x.id===id); if(!c)return;
+  if(!deviceName()){ const n=prompt('Как подписывать твои машины? (твоё имя)',''); if(n!=null) setDeviceName(n); }
+  c.owner=deviceId(); c.ownerName=deviceName()||'Я'; c.mtime=Date.now(); save(); }
+function releaseCar(id){ const c=state.cars.find(x=>x.id===id); if(!c)return; c.owner=null; c.ownerName=null; c.mtime=Date.now(); save(); }
+function toast(msg){ let t=document.getElementById('toast'); if(!t){ t=document.createElement('div'); t.id='toast'; document.body.appendChild(t); }
+  t.textContent=msg; t.classList.add('show'); clearTimeout(toast._t); toast._t=setTimeout(()=>t.classList.remove('show'),2400); }
 
 /* ============ HELPERS ============ */
 const carsLive = ()=> state.cars.filter(c=>!c.deleted);
@@ -634,20 +662,22 @@ function overviewHTML(){
 
   // photo gallery
   const photos=c.photos||[];
+  const ro=ownedByOther(c);
   const thumbs=photos.map((p,i)=>`<div class="gthumb" data-i="${i}" style="background-image:url('${p}')">${p===c.photo?`<span class="cover-badge">${SVG.star}обложка</span>`:''}</div>`).join('');
-  const addTile=`<div class="gadd" id="galAddTile">${SVG.plus}<span>Добавить</span></div>`;
-  const galleryBody = photos.length? thumbs+addTile : `${addTile}<div class="gempty">Добавь фото машины с камеры или из галереи</div>`;
+  const addTile=ro?'':`<div class="gadd" id="galAddTile">${SVG.plus}<span>Добавить</span></div>`;
+  const galleryBody = photos.length? thumbs+addTile : (ro?`<div class="gempty">Фото пока нет</div>`:`${addTile}<div class="gempty">Добавь фото машины с камеры или из галереи</div>`);
   const galleryPanel=`<div class="panel"><div class="panel-head"><h3>Галерея</h3>
-    <div style="display:flex;gap:8px">
+    ${ro?'':`<div style="display:flex;gap:8px">
       <button class="icon-btn" id="galCam" title="Снять на камеру">${SVG.camera}</button>
       <button class="icon-btn" id="galPick" title="Выбрать из галереи">${SVG.image}</button>
-    </div></div><div class="gallery">${galleryBody}</div></div>`;
+    </div>`}</div><div class="gallery">${galleryBody}</div></div>`;
 
   // recent events
   const recent=recs.slice().sort(sortRecs).slice(0,4).map(cardHTML).join('') ||
     `<div class="empty">${SVG.inbox}<p>Пока нет записей. Жми + внизу, чтобы добавить заправку, ТО или расход.</p></div>`;
 
-  return `<div class="sec-title">Обзор машины</div>
+  const roBanner = ownedByOther(c)?`<div class="ro-pill">🔒 Машина пользователя ${esc(c.ownerName||'другой')} — только просмотр</div>`:'';
+  return `<div class="sec-title">Обзор машины</div>${roBanner}
     <div class="stats">${statsHtml}</div>
     <div class="panel"><div class="panel-head"><h3>Расходы по категориям</h3><span class="tot">${fmtN(total)} ${cur()} всего</span></div><div class="bars">${bars}</div></div>
     ${galleryPanel}
@@ -795,7 +825,7 @@ document.addEventListener('click',e=>{
   openRecSheet(rec.dataset.id);
 });
 
-function editOdo(){ const c=activeCar(); const v=prompt('Текущий пробег, км:',c.mileage);
+function editOdo(){ if(!guardEdit())return; const c=activeCar(); const v=prompt('Текущий пробег, км:',c.mileage);
   if(v!=null&&v.trim()!==''){const n=parseInt(v.replace(/\D/g,''));if(!isNaN(n)){c.mileage=n;c.mtime=Date.now();save();render();}} }
 
 /* ---- record sheet ---- */
@@ -851,6 +881,7 @@ function updateFuelCalc(){
 }
 function setRecToggle(v){ui.recDone=v;document.getElementById('doneToggle').classList.toggle('on',v);}
 function openRecSheet(id){
+  if(!guardEdit()) return;
   ui.editRec=id||null;
   const f={t:'fTitle',n:'fNote',d:'fDate',m:'fMileage',c:'fCost',l:'fLiters',p:'fPpl'};
   document.getElementById('recDelete').style.display=id?'block':'none';
@@ -916,15 +947,32 @@ cColorText.oninput=()=>{let v=cColorText.value.trim();if(v&&v[0]!=='#')v='#'+v;i
 
 /* ---- car sheet ---- */
 const carOv=document.getElementById('carOverlay');
+function renderOwnRow(c){
+  const el=document.getElementById('ownRow'); if(!el)return;
+  if(!c){ el.innerHTML=''; return; }
+  if(ownedByOther(c)){ el.innerHTML=`<div class="own-note ro">🔒 Машина пользователя <b>${esc(c.ownerName||'другой')}</b> — только просмотр</div>`; }
+  else if(c.owner){ el.innerHTML=`<div class="own-note mine">✓ Твоя машина · редактируешь только ты</div>
+      <button type="button" class="tool-btn" id="ownRelease" style="margin-bottom:6px">Сделать общей (любой сможет править)</button>`;
+    document.getElementById('ownRelease').onclick=()=>{ releaseCar(c.id); openCarSheet(c.id); render(); }; }
+  else { el.innerHTML=`<button type="button" class="btn btn-ghost btn-block" id="ownClaim" style="margin-bottom:8px">🔒 Закрепить машину за мной</button>
+      <p class="hint" style="margin-bottom:8px">После этого редактировать её сможешь только ты — на других устройствах она станет «только для просмотра».</p>`;
+    document.getElementById('ownClaim').onclick=()=>{ claimCar(c.id); openCarSheet(c.id); render(); }; }
+}
 function openCarSheet(id){
   ui.editCar=id||null;
-  document.getElementById('carDelete').style.display=(id&&carsLive().length>1)?'block':'none';
+  const c=id?state.cars.find(x=>x.id===id):null;
+  const ro=!!(c && ownedByOther(c));
+  ['cMake','cModel','cYear','cMileage','cPlate','cCurrency','cEngine','cBought','cColor','cColorText'].forEach(k=>{const el=document.getElementById(k);if(el)el.disabled=ro;});
+  document.getElementById('carSave').style.display=ro?'none':'';
+  document.getElementById('carDelete').style.display=(!ro && id && carsLive().length>1)?'block':'none';
   renderSwatches();
-  if(id){const c=state.cars.find(x=>x.id===id);document.getElementById('carTitle').textContent='Редактировать авто';
+  document.querySelectorAll('#swatches .sw-dot').forEach(d=>d.style.pointerEvents=ro?'none':'');
+  if(id){document.getElementById('carTitle').textContent=ro?'Машина (просмотр)':'Редактировать авто';
     cMake.value=c.make;cModel.value=c.model||'';cYear.value=c.year||'';cMileage.value=c.mileage||'';
     cPlate.value=c.plate||'';cCurrency.value=c.currency||'€';cEngine.value=c.engine||'';cBought.value=c.bought||'';
     setCarColor(c.color||'#5b9dff');
   } else {document.getElementById('carTitle').textContent='Добавить авто';document.getElementById('carForm').reset();cCurrency.value='€';setCarColor('#5b9dff');}
+  renderOwnRow(c);
   closeSwitch();
   carOv.classList.add('open');document.body.style.overflow='hidden';
 }
@@ -933,12 +981,13 @@ document.getElementById('carCancel').onclick=closeCar;
 carOv.onclick=e=>{if(e.target.id==='carOverlay')closeCar();};
 document.getElementById('carForm').onsubmit=e=>{
   e.preventDefault();
+  if(ui.editCar){const ex=state.cars.find(x=>x.id===ui.editCar); if(ex&&ownedByOther(ex)){toast('🔒 Только просмотр');return;}}
   const base={id:ui.editCar||uid(),make:cMake.value.trim(),model:cModel.value.trim(),
     year:cYear.value?parseInt(cYear.value):null,mileage:cMileage.value?parseInt(cMileage.value):0,
     plate:cPlate.value.trim(),currency:cCurrency.value,engine:cEngine.value.trim(),bought:cBought.value,color:cColor.value,mtime:Date.now()};
   if(!base.make)return;
-  if(ui.editCar){const i=state.cars.findIndex(x=>x.id===ui.editCar);state.cars[i]={...state.cars[i],...base};} // preserve photos
-  else {state.cars.push({...base,photos:[]});state.activeCarId=base.id;}
+  if(ui.editCar){const i=state.cars.findIndex(x=>x.id===ui.editCar);state.cars[i]={...state.cars[i],...base};} // preserve photos/owner
+  else {state.cars.push({...base,photos:[],owner:deviceId(),ownerName:deviceName()||'Я'});state.activeCarId=base.id;}
   save();closeCar();render();
 };
 document.getElementById('carDelete').onclick=()=>{
@@ -957,8 +1006,9 @@ const switchOv=document.getElementById('switchOverlay');
 function openSwitch(){
   document.getElementById('carList').innerHTML=carsLive().map(c=>{
     const name=(c.make+' '+c.model).trim();
+    const badge=ownedByOther(c)?`<span class="own-badge">🔒 ${esc(c.ownerName||'другой')}</span>`:(c.owner?'<span class="own-badge" style="color:var(--muted);background:rgba(255,255,255,.06)">твоя</span>':'');
     return `<div class="car-list-item ${c.id===state.activeCarId?'active':''}" data-car="${c.id}">
-      ${carAvatar(c,40)}<div class="car-info"><b>${esc(name)}</b><span>${fmtN(c.mileage)} км${c.year?' · '+c.year:''}</span></div>
+      ${carAvatar(c,40)}<div class="car-info"><b>${esc(name)} ${badge}</b><span>${fmtN(c.mileage)} км${c.year?' · '+c.year:''}</span></div>
       <button class="ed" data-edit="${c.id}" aria-label="Изменить">${SVG.edit}</button></div>`;}).join('');
   document.querySelectorAll('[data-car]').forEach(el=>el.onclick=ev=>{
     if(ev.target.closest('[data-edit]'))return;
@@ -984,6 +1034,7 @@ function resizeImage(file,max,q){max=max||1280;q=q||0.82;
     img.onerror=()=>{URL.revokeObjectURL(url);rej();};img.src=url;});
 }
 async function addPhotos(files){
+  if(!guardEdit())return;
   const c=activeCar(); if(!c.photos)c.photos=[];
   let added=0;
   for(const f of files){ if(!f.type||!f.type.startsWith('image/'))continue;
@@ -1020,17 +1071,20 @@ function renderLightbox(){
   document.getElementById('lbImg').src=url;
   document.getElementById('lbCount').textContent=`${ui.lbIndex+1} / ${ph.length}`;
   const isCover=url===c.photo;
+  const ro=ownedByOther(c);
   const coverBtn=document.getElementById('lbCover');
   coverBtn.textContent=isCover?'✓ Обложка':'Сделать обложкой';
   coverBtn.classList.toggle('on',isCover);
+  coverBtn.style.display=ro?'none':'';
+  document.getElementById('lbDel').style.display=ro?'none':'';
   const multi=ph.length>1;
   document.getElementById('lbPrev').style.visibility=multi?'visible':'hidden';
   document.getElementById('lbNext').style.visibility=multi?'visible':'hidden';
 }
 document.getElementById('lbPrev').onclick=()=>{const ph=activeCar().photos||[];ui.lbIndex=(ui.lbIndex-1+ph.length)%ph.length;renderLightbox();};
 document.getElementById('lbNext').onclick=()=>{const ph=activeCar().photos||[];ui.lbIndex=(ui.lbIndex+1)%ph.length;renderLightbox();};
-document.getElementById('lbCover').onclick=()=>{const c=activeCar();c.photo=(c.photos||[])[ui.lbIndex];c.mtime=Date.now();save();renderLightbox();render();};
-document.getElementById('lbDel').onclick=()=>{const c=activeCar();const ph=c.photos||[];const url=ph[ui.lbIndex];
+document.getElementById('lbCover').onclick=()=>{if(!guardEdit())return;const c=activeCar();c.photo=(c.photos||[])[ui.lbIndex];c.mtime=Date.now();save();renderLightbox();render();};
+document.getElementById('lbDel').onclick=()=>{if(!guardEdit())return;const c=activeCar();const ph=c.photos||[];const url=ph[ui.lbIndex];
   if(!confirm('Удалить это фото?'))return;
   c.photos=ph.filter((_,i)=>i!==ui.lbIndex);
   if(c.photo===url)c.photo=c.photos[0]||'';
