@@ -274,6 +274,13 @@ button{font-family:inherit}
 .lb-count{font-size:13px;font-weight:700;color:var(--muted);font-family:'JetBrains Mono',monospace;min-width:46px;text-align:center}
 .lb-ctrl .tool-btn.on{color:var(--accent);border-color:var(--accent)}
 
+/* sync */
+.sync-or{text-align:center;color:var(--muted-2);font-size:12px;font-weight:700;margin:16px 0;text-transform:uppercase;letter-spacing:1px}
+.code-box{display:flex;align-items:center;gap:10px;background:var(--surface);border:1px solid var(--border);border-radius:13px;padding:12px 14px;margin-top:8px}
+.code-box code{flex:1;min-width:0;font-family:'JetBrains Mono',monospace;font-size:12.5px;color:var(--text);word-break:break-all;letter-spacing:.3px;line-height:1.4}
+.sync-status{font-size:12.5px;font-weight:700;margin-bottom:16px;display:flex;align-items:center;gap:7px}
+.flbl{display:block;font-size:12px;font-weight:700;color:var(--muted);margin-bottom:2px}
+.tool-btn .sdot{width:7px;height:7px;border-radius:50%;background:var(--green);display:inline-block}
 .tools{display:flex;gap:10px;justify-content:center;margin-top:30px;flex-wrap:wrap}
 .tool-btn{font-size:12.5px;font-weight:600;color:var(--muted);background:var(--surface);border:1px solid var(--border);
   padding:9px 16px;border-radius:11px;cursor:pointer;display:inline-flex;align-items:center;gap:7px;transition:all .2s}
@@ -395,6 +402,17 @@ button{font-family:inherit}
   </div>
 </div>
 
+<!-- Sync sheet -->
+<div class="overlay" id="syncOverlay">
+  <div class="sheet" role="dialog" aria-modal="true">
+    <div class="grab"></div>
+    <h2>Синхронизация</h2>
+    <p class="ssub">Данные между устройствами по защищённому коду. Облако — Supabase.</p>
+    <div id="syncBody"></div>
+    <button class="btn btn-ghost btn-block" id="syncCloseBtn" style="margin-top:18px">Закрыть</button>
+  </div>
+</div>
+
 <input type="file" id="importFile" accept="application/json" hidden>
 <input type="file" id="galleryFile" accept="image/*" multiple hidden>
 <input type="file" id="cameraFile" accept="image/*" capture="environment" hidden>
@@ -443,7 +461,10 @@ const SVG = {
   star:'<svg viewBox="0 0 24 24" fill="currentColor" stroke="none"><path d="M12 2l2.9 6.3 6.9.6-5.2 4.6 1.6 6.7L12 17.3 5.8 20.8l1.6-6.7L2.2 8.9l6.9-.6z"/></svg>',
   chevLeft:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>',
   chevRight:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>',
-  close:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>'
+  close:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>',
+  cloud:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z"/><path d="M12 12v5M9.5 14.5L12 17l2.5-2.5"/></svg>',
+  copy:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>',
+  check:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>'
 };
 const ACCENT='#5b9dff';
 // monochrome blue ramp — categories differ by lightness, not hue
@@ -477,7 +498,8 @@ function seed(){
   };
 }
 function load(){ try{const r=localStorage.getItem(KEY); if(r) return JSON.parse(r);}catch(e){} return seed(); }
-function save(){ localStorage.setItem(KEY, JSON.stringify(state)); }
+function persistLocal(ts){ localStorage.setItem(KEY, JSON.stringify(state)); localStorage.setItem('garage_updated', ts||new Date().toISOString()); }
+function save(){ persistLocal(new Date().toISOString()); schedulePush(); }
 function uid(){ return 'x'+Math.abs(Date.now()^(performance.now()*1000|0)).toString(36); }
 state=load();
 
@@ -736,7 +758,9 @@ function donutChart(segs){
 }
 
 function toolsHTML(){
+  const on=!!syncCode();
   return `<div class="tools">
+    <button class="tool-btn" id="syncBtn">${on?'<span class="sdot"></span>':SVG.cloud}Синхронизация${on?' вкл':''}</button>
     <button class="tool-btn" id="exportBtn">${SVG.download}Экспорт</button>
     <button class="tool-btn" id="importBtn">${SVG.upload}Импорт</button>
   </div>`;
@@ -753,6 +777,7 @@ function wireChrome(){
   document.getElementById('odoChip').onclick=editOdo;
   document.getElementById('exportBtn').onclick=doExport;
   document.getElementById('importBtn').onclick=()=>document.getElementById('importFile').click();
+  document.getElementById('syncBtn').onclick=openSync;
 }
 function wireRecords(){
   document.querySelectorAll('[data-f]').forEach(b=>b.onclick=()=>{ui.filter=b.dataset.f;render();});
@@ -942,7 +967,7 @@ function closeSwitch(){switchOv.classList.remove('open');document.body.style.ove
 document.getElementById('addCarBtn2').onclick=()=>openCarSheet(null);
 switchOv.onclick=e=>{if(e.target.id==='switchOverlay')closeSwitch();};
 
-document.addEventListener('keydown',e=>{if(e.key==='Escape'){closeRec();closeCar();closeSwitch();closeLightbox();}
+document.addEventListener('keydown',e=>{if(e.key==='Escape'){closeRec();closeCar();closeSwitch();closeLightbox();closeSync();}
   if(lbOv.classList.contains('open')){if(e.key==='ArrowLeft')document.getElementById('lbPrev').click();if(e.key==='ArrowRight')document.getElementById('lbNext').click();}});
 
 /* ---- photo gallery ---- */
@@ -1011,6 +1036,88 @@ document.getElementById('lbDel').onclick=()=>{const c=activeCar();const ph=c.pho
 document.getElementById('lbClose').onclick=closeLightbox;
 lbOv.onclick=e=>{if(e.target.id==='lbOverlay')closeLightbox();};
 
+/* ---- cloud sync (Supabase, sync-code, last-write-wins) ---- */
+const SB_URL='https://fmtrgcpzhpexjjrsoxsf.supabase.co';
+const SB_ANON='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZtdHJnY3B6aHBleGpqcnNveHNmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODEyODU1MjAsImV4cCI6MjA5Njg2MTUyMH0.t2SIQ511ztzTF07V1CEQU8afH2W40xohqr5rw8Z5s8o';
+const syncCode=()=>localStorage.getItem('garage_synccode')||'';
+const setSyncCode=c=>c?localStorage.setItem('garage_synccode',c):localStorage.removeItem('garage_synccode');
+const isUuid=v=>/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v);
+function genCode(){ if(crypto&&crypto.randomUUID)return crypto.randomUUID();
+  const b=crypto.getRandomValues(new Uint8Array(16));b[6]=(b[6]&0x0f)|0x40;b[8]=(b[8]&0x3f)|0x80;
+  const h=[...b].map(x=>x.toString(16).padStart(2,'0'));
+  return `${h.slice(0,4).join('')}-${h.slice(4,6).join('')}-${h.slice(6,8).join('')}-${h.slice(8,10).join('')}-${h.slice(10,16).join('')}`; }
+
+async function rpc(fn,body){
+  const res=await fetch(SB_URL+'/rest/v1/rpc/'+fn,{method:'POST',
+    headers:{apikey:SB_ANON,Authorization:'Bearer '+SB_ANON,'Content-Type':'application/json'},
+    body:JSON.stringify(body)});
+  if(!res.ok) throw new Error('rpc '+res.status);
+  const t=await res.text(); return t?JSON.parse(t):null;
+}
+
+let ui_syncStatus='idle', pushTimer=null;
+function setSyncStatus(s){ ui_syncStatus=s; const el=document.getElementById('syncStatusLine'); if(el)el.innerHTML=syncStatusText(); }
+function syncStatusText(){
+  const m={idle:['var(--muted-2)','—'],sync:['var(--accent)','Синхронизация…'],ok:['#5b9dff','● Синхронизировано'],err:['#ff8a8a','● Нет связи — сохранено локально']};
+  const [c,t]=m[ui_syncStatus]||m.idle; return `<span style="color:${c}">${t}</span>`;
+}
+function schedulePush(){ if(!syncCode())return; clearTimeout(pushTimer); pushTimer=setTimeout(pushNow,1200); }
+async function pushNow(){ const code=syncCode(); if(!code)return;
+  try{ setSyncStatus('sync'); const ts=await rpc('garage_push',{p_code:code,p_data:state});
+    if(ts) localStorage.setItem('garage_updated', typeof ts==='string'?ts:String(ts)); setSyncStatus('ok'); }
+  catch(e){ setSyncStatus('err'); } }
+async function pullNow(opts){ opts=opts||{}; const code=syncCode(); if(!code)return;
+  try{ setSyncStatus('sync'); const r=await rpc('garage_pull',{p_code:code});
+    const localTs=localStorage.getItem('garage_updated')||'';
+    if(r&&r.data){
+      if(opts.force || (r.updated_at||'')>localTs){ state=r.data; persistLocal(r.updated_at); render(); setSyncStatus('ok'); }
+      else if(localTs>(r.updated_at||'')){ await pushNow(); }
+      else setSyncStatus('ok');
+    } else { await pushNow(); } // nothing in cloud yet → seed it with local
+  }catch(e){ setSyncStatus('err'); } }
+
+/* sync sheet */
+const syncOv=document.getElementById('syncOverlay');
+function openSync(){ renderSyncSheet(); syncOv.classList.add('open'); document.body.style.overflow='hidden'; }
+function closeSync(){ syncOv.classList.remove('open'); document.body.style.overflow=''; }
+function renderSyncSheet(){
+  const code=syncCode(); const body=document.getElementById('syncBody');
+  if(!code){
+    body.innerHTML=`<button class="btn btn-primary btn-block" id="syncEnable">Включить синхронизацию</button>
+      <div class="sync-or">или</div>
+      <div class="field"><label class="flbl" for="syncCodeInput">Код с другого устройства</label>
+        <input id="syncCodeInput" placeholder="вставь код" spellcheck="false" autocapitalize="off"></div>
+      <button class="btn btn-ghost btn-block" id="syncConnect">Подключить это устройство</button>
+      <p class="hint">Код — длинная случайная строка. Кто им владеет — видит и меняет эти данные, поэтому делись им только со своими устройствами.</p>`;
+    document.getElementById('syncEnable').onclick=enableSync;
+    document.getElementById('syncConnect').onclick=connectSync;
+  } else {
+    body.innerHTML=`<div class="sync-status" id="syncStatusLine">${syncStatusText()}</div>
+      <label class="flbl">Твой код синхронизации</label>
+      <div class="code-box"><code id="syncCodeText">${esc(code)}</code>
+        <button class="icon-btn" id="syncCopy" title="Скопировать">${SVG.copy}</button></div>
+      <p class="hint">На другом устройстве: открой приложение → Синхронизация → вставь этот код.</p>
+      <div class="actions" style="margin-top:14px">
+        <button class="btn btn-ghost" id="syncNow">Обновить</button>
+        <button class="btn btn-danger" id="syncOff" style="flex:1;padding:15px">Отключить</button>
+      </div>`;
+    document.getElementById('syncCopy').onclick=()=>{ try{navigator.clipboard.writeText(code);}catch(e){} flashCopy(); };
+    document.getElementById('syncNow').onclick=async()=>{ await pullNow({}); };
+    document.getElementById('syncOff').onclick=disableSync;
+  }
+}
+function flashCopy(){ const b=document.getElementById('syncCopy'); if(!b)return; b.innerHTML=SVG.check; b.style.color='var(--accent)'; setTimeout(()=>{b.innerHTML=SVG.copy;b.style.color='';},1200); }
+async function enableSync(){ setSyncCode(genCode()); await pushNow(); renderSyncSheet(); render(); }
+async function connectSync(){ const v=(document.getElementById('syncCodeInput').value||'').trim().toLowerCase();
+  if(!isUuid(v)){ alert('Это не похоже на код синхронизации. Скопируй его целиком с другого устройства.'); return; }
+  if(state.records&&state.records.length && !confirm('Загрузить данные из облака? Текущие данные на этом устройстве будут заменены.')) return;
+  setSyncCode(v); await pullNow({force:true}); renderSyncSheet(); render();
+}
+function disableSync(){ if(!confirm('Отключить синхронизацию на этом устройстве? Данные останутся локально.'))return;
+  setSyncCode(''); renderSyncSheet(); render(); }
+document.getElementById('syncCloseBtn').onclick=closeSync;
+syncOv.onclick=e=>{ if(e.target.id==='syncOverlay')closeSync(); };
+
 /* ---- export/import ---- */
 function doExport(){
   const blob=new Blob([JSON.stringify(state,null,2)],{type:'application/json'});
@@ -1028,6 +1135,15 @@ document.getElementById('importFile').onchange=e=>{
 };
 
 render();
+
+/* ---- auto cloud sync ---- */
+if(syncCode()) pullNow({});
+let lastPull=0;
+document.addEventListener('visibilitychange',()=>{
+  if(document.visibilityState==='visible' && syncCode()){
+    const now=Date.now(); if(now-lastPull>4000){ lastPull=now; pullNow({}); }
+  }
+});
 
 /* ---- splash intro ---- */
 (function(){
