@@ -1042,6 +1042,7 @@ const SB_ANON='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJl
 const syncCode=()=>localStorage.getItem('garage_synccode')||'';
 const setSyncCode=c=>c?localStorage.setItem('garage_synccode',c):localStorage.removeItem('garage_synccode');
 const isUuid=v=>/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v);
+const tsMs=x=>{ const n=x?Date.parse(x):0; return isNaN(n)?0:n; };
 function genCode(){ if(crypto&&crypto.randomUUID)return crypto.randomUUID();
   const b=crypto.getRandomValues(new Uint8Array(16));b[6]=(b[6]&0x0f)|0x40;b[8]=(b[8]&0x3f)|0x80;
   const h=[...b].map(x=>x.toString(16).padStart(2,'0'));
@@ -1070,8 +1071,8 @@ async function pullNow(opts){ opts=opts||{}; const code=syncCode(); if(!code)ret
   try{ setSyncStatus('sync'); const r=await rpc('garage_pull',{p_code:code});
     const localTs=localStorage.getItem('garage_updated')||'';
     if(r&&r.data){
-      if(opts.force || (r.updated_at||'')>localTs){ state=r.data; persistLocal(r.updated_at); render(); setSyncStatus('ok'); }
-      else if(localTs>(r.updated_at||'')){ await pushNow(); }
+      if(opts.force || tsMs(r.updated_at)>tsMs(localTs)){ state=r.data; persistLocal(r.updated_at); render(); setSyncStatus('ok'); }
+      else if(tsMs(localTs)>tsMs(r.updated_at)){ await pushNow(); }
       else setSyncStatus('ok');
     } else { await pushNow(); } // nothing in cloud yet → seed it with local
   }catch(e){ setSyncStatus('err'); } }
@@ -1167,6 +1168,17 @@ document.addEventListener('visibilitychange',()=>{
     const now=Date.now(); if(now-lastPull>4000){ lastPull=now; pullNow({}); }
   }
 });
+// periodic poll (every 20s) — lightweight ping first, full pull only if changed
+async function pollTick(){
+  if(document.visibilityState!=='visible' || !syncCode() || document.querySelector('.overlay.open')) return;
+  try{
+    const ts=await rpc('garage_ping',{p_code:syncCode()});
+    const localTs=localStorage.getItem('garage_updated')||'';
+    if(ts && tsMs(ts)>tsMs(localTs)){ lastPull=Date.now(); pullNow({}); }      // cloud changed → fetch full
+    else if(tsMs(localTs)>tsMs(ts)){ schedulePush(); }                          // local newer / cloud missing → ensure pushed
+  }catch(e){}
+}
+setInterval(pollTick, 20000);
 
 /* ---- splash intro ---- */
 (function(){
