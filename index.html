@@ -504,8 +504,9 @@ function uid(){ return 'x'+Math.abs(Date.now()^(performance.now()*1000|0)).toStr
 state=load();
 
 /* ============ HELPERS ============ */
-const activeCar = ()=> state.cars.find(c=>c.id===state.activeCarId) || state.cars[0];
-const carRecords = ()=> state.records.filter(r=>r.carId===state.activeCarId);
+const carsLive = ()=> state.cars.filter(c=>!c.deleted);
+const activeCar = ()=> { const l=carsLive(); return l.find(c=>c.id===state.activeCarId) || l[0]; };
+const carRecords = ()=> state.records.filter(r=>r.carId===state.activeCarId && !r.deleted);
 const cur = ()=> (activeCar()?.currency)||'€';
 const fmtN = n=> new Intl.NumberFormat('ru-RU').format(Math.round(n));
 const fmtMoney = n=> `${fmtN(n)} ${cur()}`;
@@ -536,7 +537,7 @@ function fuelStats(){
 function render(){
   const app=document.getElementById('app');
   document.querySelector('#app')?.scrollIntoView?.();
-  if(!state.cars.length){ app.innerHTML=onboardingHTML(); wireOnboarding(); return; }
+  if(!carsLive().length){ app.innerHTML=onboardingHTML(); wireOnboarding(); return; }
   app.innerHTML = topbarHTML() + `<div class="wrap" id="page"></div>` + navHTML();
   const page=document.getElementById('page');
   if(ui.tab==='overview') page.innerHTML=overviewHTML();
@@ -580,7 +581,7 @@ function topbarHTML(){
   return `<header class="topbar"><div class="topbar-inner">
     <div class="car-switch" id="carSwitch">
       ${carAvatar(c,40)}
-      <div class="car-info"><b>${esc(name)}</b><span>${c.year?c.year+' · ':''}${state.cars.length>1?state.cars.length+' авто в гараже':'твоя машина'}</span></div>
+      <div class="car-info"><b>${esc(name)}</b><span>${c.year?c.year+' · ':''}${carsLive().length>1?carsLive().length+' авто в гараже':'твоя машина'}</span></div>
       <div class="chev">${SVG.chevDown}</div>
     </div>
     <div class="odo-chip" id="odoChip"><span>Пробег</span><b>${fmtN(c.mileage)} <small>км</small></b></div>
@@ -795,7 +796,7 @@ document.addEventListener('click',e=>{
 });
 
 function editOdo(){ const c=activeCar(); const v=prompt('Текущий пробег, км:',c.mileage);
-  if(v!=null&&v.trim()!==''){const n=parseInt(v.replace(/\D/g,''));if(!isNaN(n)){c.mileage=n;save();render();}} }
+  if(v!=null&&v.trim()!==''){const n=parseInt(v.replace(/\D/g,''));if(!isNaN(n)){c.mileage=n;c.mtime=Date.now();save();render();}} }
 
 /* ---- record sheet ---- */
 const recOv=document.getElementById('recOverlay');
@@ -884,16 +885,17 @@ document.getElementById('recForm').onsubmit=e=>{
     date:document.getElementById('fDate').value||'',
     mileage:document.getElementById('fMileage').value!==''?parseInt(document.getElementById('fMileage').value):null,
     cost:document.getElementById('fCost').value!==''?parseFloat(document.getElementById('fCost').value):0,
-    done:ui.recType==='reminder'?false:ui.recDone};
+    done:ui.recType==='reminder'?false:ui.recDone, mtime:Date.now()};
   if(isFuel)rec.liters=liters;
   if(ui.editRec){const i=state.records.findIndex(x=>x.id===ui.editRec);state.records[i]=rec;}
   else state.records.unshift(rec);
   // bump odometer if this record has a higher mileage
-  if(rec.mileage!=null){const c=activeCar();if(rec.mileage>c.mileage)c.mileage=rec.mileage;}
+  if(rec.mileage!=null){const c=activeCar();if(rec.mileage>c.mileage){c.mileage=rec.mileage;c.mtime=Date.now();}}
   save();closeRec();render();
 };
 function delRec(id,silent){const r=state.records.find(x=>x.id===id);
-  if(silent||confirm(`Удалить «${r.title||'запись'}»?`)){state.records=state.records.filter(x=>x.id!==id);save();render();}}
+  if(!r)return;
+  if(silent||confirm(`Удалить «${r.title||'запись'}»?`)){ r.deleted=true; r.mtime=Date.now(); save();render(); }}
 
 /* ---- car color picker ---- */
 const COLOR_PRESETS=['#5b9dff','#7fb4ff','#3d7fd0','#2b5f9e','#1f4d80','#cbd5e1','#94a3b8','#64748b','#e2e8f0','#ffffff'];
@@ -916,7 +918,7 @@ cColorText.oninput=()=>{let v=cColorText.value.trim();if(v&&v[0]!=='#')v='#'+v;i
 const carOv=document.getElementById('carOverlay');
 function openCarSheet(id){
   ui.editCar=id||null;
-  document.getElementById('carDelete').style.display=(id&&state.cars.length>1)?'block':'none';
+  document.getElementById('carDelete').style.display=(id&&carsLive().length>1)?'block':'none';
   renderSwatches();
   if(id){const c=state.cars.find(x=>x.id===id);document.getElementById('carTitle').textContent='Редактировать авто';
     cMake.value=c.make;cModel.value=c.model||'';cYear.value=c.year||'';cMileage.value=c.mileage||'';
@@ -931,28 +933,29 @@ document.getElementById('carCancel').onclick=closeCar;
 carOv.onclick=e=>{if(e.target.id==='carOverlay')closeCar();};
 document.getElementById('carForm').onsubmit=e=>{
   e.preventDefault();
-  const c={id:ui.editCar||uid(),make:cMake.value.trim(),model:cModel.value.trim(),
+  const base={id:ui.editCar||uid(),make:cMake.value.trim(),model:cModel.value.trim(),
     year:cYear.value?parseInt(cYear.value):null,mileage:cMileage.value?parseInt(cMileage.value):0,
-    plate:cPlate.value.trim(),currency:cCurrency.value,engine:cEngine.value.trim(),bought:cBought.value,color:cColor.value};
-  if(!c.make)return;
-  if(ui.editCar){const i=state.cars.findIndex(x=>x.id===ui.editCar);state.cars[i]=c;}
-  else {state.cars.push(c);state.activeCarId=c.id;}
+    plate:cPlate.value.trim(),currency:cCurrency.value,engine:cEngine.value.trim(),bought:cBought.value,color:cColor.value,mtime:Date.now()};
+  if(!base.make)return;
+  if(ui.editCar){const i=state.cars.findIndex(x=>x.id===ui.editCar);state.cars[i]={...state.cars[i],...base};} // preserve photos
+  else {state.cars.push({...base,photos:[]});state.activeCarId=base.id;}
   save();closeCar();render();
 };
 document.getElementById('carDelete').onclick=()=>{
-  if(state.cars.length<=1)return;
+  if(carsLive().length<=1)return;
   const c=state.cars.find(x=>x.id===ui.editCar);
   if(confirm(`Удалить «${(c.make+' '+c.model).trim()}» и все её записи?`)){
-    state.cars=state.cars.filter(x=>x.id!==ui.editCar);
-    state.records=state.records.filter(r=>r.carId!==ui.editCar);
-    if(state.activeCarId===ui.editCar)state.activeCarId=state.cars[0].id;
+    const t=Date.now();
+    c.deleted=true; c.mtime=t;
+    state.records.forEach(r=>{ if(r.carId===ui.editCar && !r.deleted){ r.deleted=true; r.mtime=t; }});
+    if(state.activeCarId===ui.editCar){ const l=carsLive(); state.activeCarId=l[0]&&l[0].id; }
     save();closeCar();render();}
 };
 
 /* ---- switch sheet ---- */
 const switchOv=document.getElementById('switchOverlay');
 function openSwitch(){
-  document.getElementById('carList').innerHTML=state.cars.map(c=>{
+  document.getElementById('carList').innerHTML=carsLive().map(c=>{
     const name=(c.make+' '+c.model).trim();
     return `<div class="car-list-item ${c.id===state.activeCarId?'active':''}" data-car="${c.id}">
       ${carAvatar(c,40)}<div class="car-info"><b>${esc(name)}</b><span>${fmtN(c.mileage)} км${c.year?' · '+c.year:''}</span></div>
@@ -986,6 +989,7 @@ async function addPhotos(files){
   for(const f of files){ if(!f.type||!f.type.startsWith('image/'))continue;
     try{ const url=await resizeImage(f); c.photos.push(url); if(!c.photo)c.photo=url; added++; }catch(e){} }
   if(!added)return;
+  c.mtime=Date.now();
   try{ save(); }
   catch(e){ for(let i=0;i<added;i++)c.photos.pop(); if(c.photos.length===0)c.photo='';
     alert('Не хватает места в браузере для новых фото. Удали несколько старых фотографий и попробуй снова.'); return; }
@@ -1025,11 +1029,12 @@ function renderLightbox(){
 }
 document.getElementById('lbPrev').onclick=()=>{const ph=activeCar().photos||[];ui.lbIndex=(ui.lbIndex-1+ph.length)%ph.length;renderLightbox();};
 document.getElementById('lbNext').onclick=()=>{const ph=activeCar().photos||[];ui.lbIndex=(ui.lbIndex+1)%ph.length;renderLightbox();};
-document.getElementById('lbCover').onclick=()=>{const c=activeCar();c.photo=(c.photos||[])[ui.lbIndex];save();renderLightbox();render();};
+document.getElementById('lbCover').onclick=()=>{const c=activeCar();c.photo=(c.photos||[])[ui.lbIndex];c.mtime=Date.now();save();renderLightbox();render();};
 document.getElementById('lbDel').onclick=()=>{const c=activeCar();const ph=c.photos||[];const url=ph[ui.lbIndex];
   if(!confirm('Удалить это фото?'))return;
   c.photos=ph.filter((_,i)=>i!==ui.lbIndex);
   if(c.photo===url)c.photo=c.photos[0]||'';
+  c.mtime=Date.now();
   save();
   if(!c.photos.length)closeLightbox(); else renderLightbox();
   render();};
@@ -1063,18 +1068,28 @@ function syncStatusText(){
   const [c,t]=m[ui_syncStatus]||m.idle; return `<span style="color:${c}">${t}</span>`;
 }
 function schedulePush(){ if(!syncCode())return; clearTimeout(pushTimer); pushTimer=setTimeout(pushNow,1200); }
+// signature of a state for cheap "did anything change?" checks (ids + mtimes + tombstones)
+function sig(s){ const k=arr=>(arr||[]).map(i=>i.id+':'+(i.mtime||0)+(i.deleted?'D':'')).sort().join(','); return k(s&&s.cars)+'|'+k(s&&s.records); }
+function rememberCloudTs(ts){ if(ts) localStorage.setItem('garage_cloud_ts', typeof ts==='string'?ts:String(ts)); }
+// push = pull + merge + push, so a local push can never clobber another device's recent change
 async function pushNow(){ const code=syncCode(); if(!code)return;
-  try{ setSyncStatus('sync'); const ts=await rpc('garage_push',{p_code:code,p_data:state});
-    if(ts) localStorage.setItem('garage_updated', typeof ts==='string'?ts:String(ts)); setSyncStatus('ok'); }
-  catch(e){ setSyncStatus('err'); } }
+  try{ setSyncStatus('sync');
+    const r=await rpc('garage_pull',{p_code:code});
+    if(r&&r.data){ const before=sig(state); state=mergeState(state,r.data);
+      if(sig(state)!==before){ persistLocal(new Date().toISOString()); render(); } }
+    const ts=await rpc('garage_push',{p_code:code,p_data:state});
+    rememberCloudTs(ts); setSyncStatus('ok');
+  }catch(e){ setSyncStatus('err'); } }
 async function pullNow(opts){ opts=opts||{}; const code=syncCode(); if(!code)return;
   try{ setSyncStatus('sync'); const r=await rpc('garage_pull',{p_code:code});
-    const localTs=localStorage.getItem('garage_updated')||'';
     if(r&&r.data){
-      if(opts.force || tsMs(r.updated_at)>tsMs(localTs)){ state=r.data; persistLocal(r.updated_at); render(); setSyncStatus('ok'); }
-      else if(tsMs(localTs)>tsMs(r.updated_at)){ await pushNow(); }
-      else setSyncStatus('ok');
-    } else { await pushNow(); } // nothing in cloud yet → seed it with local
+      const before=sig(state);
+      state=mergeState(state, r.data);            // per-item merge — never wipes the other side
+      if(sig(state)!==before){ persistLocal(new Date().toISOString()); render(); }
+      localStorage.setItem('garage_cloud_ts', r.updated_at||'');
+      if(sig(state)!==sig(r.data)){ const ts=await rpc('garage_push',{p_code:code,p_data:state}); rememberCloudTs(ts); } // union > cloud → push up
+      setSyncStatus('ok');
+    } else { const ts=await rpc('garage_push',{p_code:code,p_data:state}); rememberCloudTs(ts); } // seed cloud
   }catch(e){ setSyncStatus('err'); } }
 
 /* sync sheet */
@@ -1109,21 +1124,21 @@ function renderSyncSheet(){
 }
 function flashCopy(){ const b=document.getElementById('syncCopy'); if(!b)return; b.innerHTML=SVG.check; b.style.color='var(--accent)'; setTimeout(()=>{b.innerHTML=SVG.copy;b.style.color='';},1200); }
 async function enableSync(){ setSyncCode(genCode()); await pushNow(); renderSyncSheet(); render(); }
-// union-merge two garage states by id — nothing is lost on either side
-function mergeStates(a,b){
+// per-item merge by id: newest mtime wins, union of both sides, tombstones (deleted) kept so deletions propagate
+function mergeItems(local,cloud){
+  const m=new Map();
+  (local||[]).forEach(it=>m.set(it.id,it));
+  (cloud||[]).forEach(it=>{ const ex=m.get(it.id); if(!ex || (it.mtime||0)>(ex.mtime||0)) m.set(it.id,it); });
+  return [...m.values()];
+}
+function mergeState(a,b){
   a=a||{cars:[],records:[]}; b=b||{cars:[],records:[]};
-  const carMap=new Map();
-  [...(a.cars||[]),...(b.cars||[])].forEach(c=>{
-    if(!carMap.has(c.id)) carMap.set(c.id,{...c});
-    else { const ex=carMap.get(c.id);
-      const photos=[...new Set([...(ex.photos||[]),...(c.photos||[])])];
-      carMap.set(c.id,{...ex, photos, photo: ex.photo||c.photo}); }
-  });
-  const recMap=new Map();
-  [...(a.records||[]),...(b.records||[])].forEach(r=>{ if(!recMap.has(r.id)) recMap.set(r.id,r); });
-  const cars=[...carMap.values()];
-  const activeCarId=(a.activeCarId&&carMap.has(a.activeCarId))?a.activeCarId:(b.activeCarId||(cars[0]&&cars[0].id));
-  return {activeCarId, cars, records:[...recMap.values()]};
+  const cars=mergeItems(a.cars,b.cars);
+  const records=mergeItems(a.records,b.records);
+  const liveIds=new Set(cars.filter(c=>!c.deleted).map(c=>c.id));
+  let activeCarId=a.activeCarId;
+  if(!activeCarId||!liveIds.has(activeCarId)) activeCarId=(b.activeCarId&&liveIds.has(b.activeCarId))?b.activeCarId:[...liveIds][0];
+  return {activeCarId, cars, records};
 }
 async function connectSync(){ const v=(document.getElementById('syncCodeInput').value||'').trim().toLowerCase();
   if(!isUuid(v)){ alert('Это не похоже на код синхронизации. Скопируй его целиком с другого устройства.'); return; }
@@ -1131,7 +1146,7 @@ async function connectSync(){ const v=(document.getElementById('syncCodeInput').
   try{
     setSyncStatus('sync');
     const r=await rpc('garage_pull',{p_code:v});
-    if(r&&r.data){ state=mergeStates(state, r.data); persistLocal(new Date().toISOString()); await pushNow(); }
+    if(r&&r.data){ state=mergeState(state, r.data); persistLocal(new Date().toISOString()); localStorage.setItem('garage_cloud_ts', r.updated_at||''); await pushNow(); }
     else { await pushNow(); } // cloud empty → seed it with local
     setSyncStatus('ok');
   }catch(e){ setSyncStatus('err'); }
@@ -1168,14 +1183,13 @@ document.addEventListener('visibilitychange',()=>{
     const now=Date.now(); if(now-lastPull>4000){ lastPull=now; pullNow({}); }
   }
 });
-// periodic poll (every 20s) — lightweight ping first, full pull only if changed
+// periodic poll (every 20s) — lightweight ping first, full merge-pull only if the cloud row changed
 async function pollTick(){
   if(document.visibilityState!=='visible' || !syncCode() || document.querySelector('.overlay.open')) return;
   try{
     const ts=await rpc('garage_ping',{p_code:syncCode()});
-    const localTs=localStorage.getItem('garage_updated')||'';
-    if(ts && tsMs(ts)>tsMs(localTs)){ lastPull=Date.now(); pullNow({}); }      // cloud changed → fetch full
-    else if(tsMs(localTs)>tsMs(ts)){ schedulePush(); }                          // local newer / cloud missing → ensure pushed
+    const seen=localStorage.getItem('garage_cloud_ts')||'';
+    if((ts||'')!==seen){ lastPull=Date.now(); pullNow({}); } // cloud row changed since we last saw it → merge
   }catch(e){}
 }
 setInterval(pollTick, 20000);
