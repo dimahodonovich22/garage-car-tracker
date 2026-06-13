@@ -1088,7 +1088,7 @@ function renderSyncSheet(){
       <div class="field"><label class="flbl" for="syncCodeInput">Код с другого устройства</label>
         <input id="syncCodeInput" placeholder="вставь код" spellcheck="false" autocapitalize="off"></div>
       <button class="btn btn-ghost btn-block" id="syncConnect">Подключить это устройство</button>
-      <p class="hint">Код — длинная случайная строка. Кто им владеет — видит и меняет эти данные, поэтому делись им только со своими устройствами.</p>`;
+      <p class="hint">При подключении записи этого устройства <b style="color:var(--muted)">объединяются</b> с облачными — ничего не теряется. Код — длинная случайная строка: кто им владеет, видит эти данные, поэтому делись им только со своими устройствами.</p>`;
     document.getElementById('syncEnable').onclick=enableSync;
     document.getElementById('syncConnect').onclick=connectSync;
   } else {
@@ -1108,10 +1108,33 @@ function renderSyncSheet(){
 }
 function flashCopy(){ const b=document.getElementById('syncCopy'); if(!b)return; b.innerHTML=SVG.check; b.style.color='var(--accent)'; setTimeout(()=>{b.innerHTML=SVG.copy;b.style.color='';},1200); }
 async function enableSync(){ setSyncCode(genCode()); await pushNow(); renderSyncSheet(); render(); }
+// union-merge two garage states by id — nothing is lost on either side
+function mergeStates(a,b){
+  a=a||{cars:[],records:[]}; b=b||{cars:[],records:[]};
+  const carMap=new Map();
+  [...(a.cars||[]),...(b.cars||[])].forEach(c=>{
+    if(!carMap.has(c.id)) carMap.set(c.id,{...c});
+    else { const ex=carMap.get(c.id);
+      const photos=[...new Set([...(ex.photos||[]),...(c.photos||[])])];
+      carMap.set(c.id,{...ex, photos, photo: ex.photo||c.photo}); }
+  });
+  const recMap=new Map();
+  [...(a.records||[]),...(b.records||[])].forEach(r=>{ if(!recMap.has(r.id)) recMap.set(r.id,r); });
+  const cars=[...carMap.values()];
+  const activeCarId=(a.activeCarId&&carMap.has(a.activeCarId))?a.activeCarId:(b.activeCarId||(cars[0]&&cars[0].id));
+  return {activeCarId, cars, records:[...recMap.values()]};
+}
 async function connectSync(){ const v=(document.getElementById('syncCodeInput').value||'').trim().toLowerCase();
   if(!isUuid(v)){ alert('Это не похоже на код синхронизации. Скопируй его целиком с другого устройства.'); return; }
-  if(state.records&&state.records.length && !confirm('Загрузить данные из облака? Текущие данные на этом устройстве будут заменены.')) return;
-  setSyncCode(v); await pullNow({force:true}); renderSyncSheet(); render();
+  setSyncCode(v);
+  try{
+    setSyncStatus('sync');
+    const r=await rpc('garage_pull',{p_code:v});
+    if(r&&r.data){ state=mergeStates(state, r.data); persistLocal(new Date().toISOString()); await pushNow(); }
+    else { await pushNow(); } // cloud empty → seed it with local
+    setSyncStatus('ok');
+  }catch(e){ setSyncStatus('err'); }
+  renderSyncSheet(); render();
 }
 function disableSync(){ if(!confirm('Отключить синхронизацию на этом устройстве? Данные останутся локально.'))return;
   setSyncCode(''); renderSyncSheet(); render(); }
